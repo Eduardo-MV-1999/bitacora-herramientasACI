@@ -11,7 +11,7 @@ st.markdown("""
 <style>
     .stButton button { width: 100%; border-radius: 10px; padding: 0.5rem; font-size: 1.2rem; }
     @media (max-width: 768px) { .stDataFrame { font-size: 12px; } }
-    .diagnostico { background-color: #f0f2f6; padding: 10px; border-radius: 5px; }
+    .diagnostico { background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin: 10px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -21,19 +21,17 @@ DB_NAME = "herramientas.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    # Tabla herramientas
     c.execute('''CREATE TABLE IF NOT EXISTS herramientas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     nombre TEXT UNIQUE,
                     cantidad_total INTEGER,
                     descripcion TEXT
                 )''')
-    # Tabla movimientos con clave foránea
     c.execute('''CREATE TABLE IF NOT EXISTS movimientos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     herramienta_id INTEGER,
                     usuario TEXT,
-                    fecha_prestamo TEXT,  -- guardamos como TEXT ISO (YYYY-MM-DD)
+                    fecha_prestamo TEXT,
                     fecha_devolucion TEXT,
                     FOREIGN KEY(herramienta_id) REFERENCES herramientas(id)
                 )''')
@@ -42,7 +40,7 @@ def init_db():
 
 init_db()
 
-# ========== FUNCIONES DE CONSULTA ==========
+# ========== FUNCIONES ==========
 def get_herramientas():
     conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql("SELECT id, nombre, cantidad_total FROM herramientas", conn)
@@ -83,7 +81,7 @@ def get_stock_disponible():
     df_herramientas['disponible'] = df_herramientas['cantidad_total'] - df_herramientas['prestados']
     return df_herramientas
 
-# ========== IMPORTAR / EXPORTAR EXCEL ==========
+# ========== IMPORTAR/EXPORTAR ==========
 def importar_dataframe(df, fuente):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -106,7 +104,6 @@ def exportar_excel():
     conn.close()
     return df
 
-# ========== IMPORTACIÓN AUTOMÁTICA DESDE ARCHIVO LOCAL ==========
 def importar_desde_archivo_local():
     posibles = ["herramientas.xlsx", "herramientas.csv", "inventario.xlsx", "inventario.csv"]
     archivo = None
@@ -122,7 +119,6 @@ def importar_desde_archivo_local():
             df = pd.read_csv(archivo, encoding='utf-8')
         else:
             df = pd.read_excel(archivo, engine='openpyxl')
-        # Estandarizar columnas
         df.columns = df.columns.str.strip().str.lower()
         if 'nombre' not in df.columns or 'cantidad_total' not in df.columns:
             st.error(f"El archivo debe tener columnas 'nombre' y 'cantidad_total'. Encontradas: {list(df.columns)}")
@@ -138,10 +134,7 @@ def importar_desde_archivo_local():
         st.error(f"Error al leer {archivo}: {e}")
         return False
 
-# ========== INTERFAZ PRINCIPAL ==========
-st.title("🔧 Bitácora de Herramientas")
-
-# Verificar si hay datos, si no, importar automáticamente
+# ========== INICIALIZACIÓN ==========
 if 'datos_cargados' not in st.session_state:
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -179,7 +172,9 @@ if not st.session_state.datos_cargados:
                     st.error(f"Error: {e}")
             st.stop()
 
-# ========== MENÚ ==========
+# ========== MENÚ PRINCIPAL ==========
+st.title("🔧 Bitácora de Herramientas")
+
 menu = st.sidebar.radio(
     "📋 Menú",
     ["📊 Inventario", "➕ Nueva herramienta", "📤 Registrar préstamo", "📥 Registrar devolución", 
@@ -202,7 +197,7 @@ if menu == "📊 Inventario":
                     col3.write(f"Disponible: {row['disponible']}")
                     st.divider()
         else:
-            st.dataframe(df_stock[['nombre', 'cantidad_total', 'prestados', 'disponible']], use_container_width=True)
+            st.dataframe(df_stock[['nombre', 'cantidad_total', 'prestados', 'disponible']], width='stretch')
 
 # ---------- NUEVA HERRAMIENTA ----------
 elif menu == "➕ Nueva herramienta":
@@ -247,10 +242,11 @@ elif menu == "📤 Registrar préstamo":
                     c.execute("INSERT INTO movimientos (herramienta_id, usuario, fecha_prestamo) VALUES (?, ?, ?)",
                               (id_her, usuario, fecha_str))
                     conn.commit()
-                    # Obtener el ID recién insertado
                     nuevo_id = c.lastrowid
                     st.success(f"✅ Préstamo registrado con ID {nuevo_id} - {herramienta} a {usuario} el {fecha_str}")
                     st.balloons()
+                    # Mostrar el registro recién insertado para depuración
+                    st.info("🔍 Revisa 'Diagnóstico' para confirmar que el registro existe.")
                 except Exception as e:
                     st.error(f"❌ Error al guardar: {e}")
                 finally:
@@ -262,10 +258,12 @@ elif menu == "📥 Registrar devolución":
     prestamos = get_prestamos_activos()
     if prestamos.empty:
         st.info("No hay préstamos activos en este momento.")
+        # Mostrar todos los movimientos para ayudar a depurar
+        with st.expander("Ver todos los movimientos (incluyendo devueltos)"):
+            df_all = get_movimientos()
+            st.dataframe(df_all, width='stretch')
     else:
-        # Mostrar tabla de préstamos activos
-        st.dataframe(prestamos[['id', 'nombre', 'usuario', 'fecha_prestamo']], use_container_width=True)
-        # Seleccionar por ID
+        st.dataframe(prestamos[['id', 'nombre', 'usuario', 'fecha_prestamo']], width='stretch')
         opciones = prestamos.apply(lambda x: f"ID:{x['id']} - {x['nombre']} - {x['usuario']} ({x['fecha_prestamo']})", axis=1)
         seleccion = st.selectbox("Selecciona el préstamo a devolver", opciones)
         fecha_dev = st.date_input("Fecha de devolución", date.today())
@@ -301,8 +299,7 @@ elif menu == "📜 Historial":
     if df.empty:
         st.info("No hay movimientos registrados.")
     else:
-        st.dataframe(df, use_container_width=True)
-        # Mostrar estadísticas
+        st.dataframe(df, width='stretch')
         st.caption(f"Total de registros: {len(df)}")
 
 # ---------- EXPORTAR INVENTARIO ----------
@@ -312,8 +309,7 @@ elif menu == "📤 Exportar inventario":
     if df_export.empty:
         st.warning("No hay herramientas para exportar.")
     else:
-        st.dataframe(df_export, use_container_width=True)
-        # Convertir a bytes para descarga
+        st.dataframe(df_export, width='stretch')
         from io import BytesIO
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -359,14 +355,16 @@ elif menu == "🔍 Diagnóstico":
         conn = sqlite3.connect(DB_NAME)
         df_her = pd.read_sql("SELECT * FROM herramientas", conn)
         conn.close()
-        st.dataframe(df_her, use_container_width=True)
+        st.dataframe(df_her, width='stretch')
     with col2:
         st.write("**Tabla movimientos**")
         conn = sqlite3.connect(DB_NAME)
         df_mov = pd.read_sql("SELECT * FROM movimientos", conn)
         conn.close()
-        st.dataframe(df_mov, use_container_width=True)
+        st.dataframe(df_mov, width='stretch')
     st.markdown("---")
-    st.write("**Préstamos activos**")
+    st.write("**Préstamos activos (fecha_devolucion IS NULL)**")
     df_activos = get_prestamos_activos()
-    st.dataframe(df_activos, use_container_width=True)
+    st.dataframe(df_activos, width='stretch')
+    st.write("**Cantidad de herramientas:**", len(df_her))
+    st.write("**Cantidad de movimientos:**", len(df_mov))
