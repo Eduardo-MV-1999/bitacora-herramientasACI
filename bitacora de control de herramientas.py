@@ -3,6 +3,8 @@ import sqlite3
 import pandas as pd
 from datetime import date
 import os
+import os
+st.write("Directorio actual:", os.getcwd())
 
 # ========== CONFIGURACIÓN ==========
 st.set_page_config(page_title="Bitácora de Herramientas", page_icon="🔧", layout="wide")
