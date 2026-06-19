@@ -21,13 +21,16 @@ jobs:
         run: |
           pip install pandas openpyxl psycopg2-binary
 
-      - name: Generar Excel de respaldo y cuerpo del correo
+      - name: Generar Excel y enviar correo
         env:
           SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
           SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
           SUPABASE_DB: ${{ secrets.SUPABASE_DB }}
           SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
           python -c "
           import pandas as pd
@@ -35,6 +38,11 @@ jobs:
           from datetime import datetime
           import os
           import socket
+          import smtplib
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+          from email.mime.base import MIMEBase
+          from email import encoders
 
           print('🔌 Conectando a Supabase...')
 
@@ -83,6 +91,7 @@ jobs:
 
           conn.close()
 
+          # Crear Excel
           fecha = datetime.now().strftime('%Y-%m-%d')
           hora = datetime.now().strftime('%H:%M:%S')
           filename = f'backup_bitacora_{fecha}.xlsx'
@@ -91,48 +100,55 @@ jobs:
               df_herramientas.to_excel(writer, sheet_name='Inventario', index=False)
               df_movimientos.to_excel(writer, sheet_name='Historial', index=False)
 
-          # Guardar conteos Y la fecha en variables de entorno
-          with open('conteos.txt', 'w') as f:
-              f.write(f'Herramientas: {len(df_herramientas)}\n')
-              f.write(f'Movimientos: {len(df_movimientos)}')
-
-          # Guardar fecha y hora para el correo
-          with open('fecha.txt', 'w') as f:
-              f.write(f'{fecha} {hora}')
-
-          with open('body.txt', 'w') as f:
-              f.write(f"""📊 Respaldo de Bitácora de Herramientas
-
-          Fecha: {fecha} {hora}
-
-          Herramientas: {len(df_herramientas)}
-          Movimientos: {len(df_movimientos)}
-
-          Se adjunta el archivo Excel con toda la información.""")
-
           print(f'✅ Backup creado: {filename}')
+
+          # ============================================================
+          # ENVIAR CORREO CON EL EXCEL ADJUNTO USANDO smtplib
+          # ============================================================
+          print('📧 Enviando correo...')
+
+          # Configurar correo
+          remitente = os.environ['EMAIL_FROM']
+          destinatario = os.environ['EMAIL_TO']
+          password = os.environ['EMAIL_PASSWORD']
+
+          msg = MIMEMultipart()
+          msg['From'] = remitente
+          msg['To'] = destinatario
+          msg['Subject'] = f'📊 Respaldo Bitácora - {fecha}'
+
+          # Cuerpo del correo
+          cuerpo = f"""
+  📊 Respaldo de Bitácora de Herramientas
+
+  Fecha: {fecha} {hora}
+
+  Herramientas: {len(df_herramientas)}
+  Movimientos: {len(df_movimientos)}
+
+  Se adjunta el archivo Excel con toda la información.
+          """
+          msg.attach(MIMEText(cuerpo, 'plain'))
+
+          # Adjuntar archivo Excel
+          with open(filename, 'rb') as adjunto:
+              parte = MIMEBase('application', 'octet-stream')
+              parte.set_payload(adjunto.read())
+              encoders.encode_base64(parte)
+              parte.add_header(
+                  'Content-Disposition',
+                  f'attachment; filename={filename}'
+              )
+              msg.attach(parte)
+
+          # Enviar correo
+          try:
+              server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+              server.login(remitente, password)
+              server.sendmail(remitente, destinatario, msg.as_string())
+              server.quit()
+              print('✅ Correo enviado exitosamente')
+          except Exception as e:
+              print(f'❌ Error al enviar correo: {e}')
+              raise e
           "
-
-      - name: Leer cuerpo del correo
-        id: read_body
-        run: |
-          BODY=$(cat body.txt)
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          echo "$BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Enviar correo con el respaldo
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_FROM }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "📊 Respaldo Bitácora - $(date +'%Y-%m-%d')"
-          to: ${{ secrets.EMAIL_TO }}
-          from: ${{ secrets.EMAIL_FROM }}
-          body: ${{ steps.read_body.outputs.body }}
-          attachments: backup_bitacora_*.xlsx
-      - name: Verificar archivo Excel
-        run: |
-          ls -la backup_bitacora_*.xlsx || echo "❌ Archivo no encontrado"
