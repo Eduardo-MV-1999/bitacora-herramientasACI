@@ -34,17 +34,52 @@ jobs:
           import psycopg2
           from datetime import datetime
           import os
+          import socket
 
-          conn = psycopg2.connect(
-              host=os.environ['SUPABASE_HOST'],
-              port=os.environ['SUPABASE_PORT'],
-              database=os.environ['SUPABASE_DB'],
-              user=os.environ['SUPABASE_USER'],
-              password=os.environ['SUPABASE_PASSWORD']
-          )
+          print('🔌 Conectando a Supabase (forzando IPv4)...')
 
+          # Forzar a usar IPv4 en la conexión
+          # Esta es la solución clave para el error "Network is unreachable"
+          try:
+              # Intentar conectar usando hostaddr (IPv4)
+              conn = psycopg2.connect(
+                  host=os.environ['SUPABASE_HOST'],
+                  port=os.environ['SUPABASE_PORT'],
+                  database=os.environ['SUPABASE_DB'],
+                  user=os.environ['SUPABASE_USER'],
+                  password=os.environ['SUPABASE_PASSWORD'],
+                  sslmode='require',
+                  connect_timeout=30
+              )
+              print('✅ Conexión exitosa')
+          except Exception as e:
+              print(f'❌ Error de conexión: {e}')
+              # Si falla, intentar con hostaddr (IPv4 directo)
+              import socket
+              try:
+                  # Obtener la IP del host
+                  hostname = os.environ['SUPABASE_HOST']
+                  ipv4 = socket.gethostbyname(hostname)
+                  print(f'📍 Resolviendo {hostname} -> {ipv4}')
+                  conn = psycopg2.connect(
+                      host=ipv4,
+                      port=os.environ['SUPABASE_PORT'],
+                      database=os.environ['SUPABASE_DB'],
+                      user=os.environ['SUPABASE_USER'],
+                      password=os.environ['SUPABASE_PASSWORD'],
+                      sslmode='require',
+                      connect_timeout=30
+                  )
+                  print('✅ Conexión exitosa (usando IPv4 directo)')
+              except Exception as e2:
+                  print(f'❌ Error al conectar por IPv4: {e2}')
+                  raise e2
+
+          print('📊 Leyendo herramientas...')
           df_herramientas = pd.read_sql('SELECT * FROM herramientas ORDER BY nombre', conn)
+          print(f'✅ {len(df_herramientas)} herramientas encontradas')
 
+          print('📊 Leyendo movimientos...')
           df_movimientos = pd.read_sql('''
               SELECT h.nombre AS Herramienta, m.usuario AS Usuario,
                      m.cantidad AS Cantidad,
@@ -54,6 +89,7 @@ jobs:
               JOIN herramientas h ON m.herramienta_id = h.id
               ORDER BY m.fecha_prestamo DESC
           ''', conn)
+          print(f'✅ {len(df_movimientos)} movimientos encontrados')
 
           conn.close()
 
@@ -83,8 +119,11 @@ jobs:
           from: ${{ secrets.EMAIL_FROM }}
           body: |
             📊 Respaldo de Bitácora de Herramientas
+
             Fecha: $(date +'%Y-%m-%d %H:%M:%S')
+
             $(cat conteos.txt)
+
             Se adjunta el archivo Excel con toda la información.
           attachments: backup_bitacora_*.xlsx
           content_type: text/plain
