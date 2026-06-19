@@ -21,7 +21,7 @@ jobs:
         run: |
           pip install pandas openpyxl psycopg2-binary
 
-      - name: Generar Excel de respaldo
+      - name: Generar Excel de respaldo y cuerpo del correo
         env:
           SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
           SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
@@ -84,18 +84,42 @@ jobs:
           conn.close()
 
           fecha = datetime.now().strftime('%Y-%m-%d')
+          hora = datetime.now().strftime('%H:%M:%S')
           filename = f'backup_bitacora_{fecha}.xlsx'
 
           with pd.ExcelWriter(filename, engine='openpyxl') as writer:
               df_herramientas.to_excel(writer, sheet_name='Inventario', index=False)
               df_movimientos.to_excel(writer, sheet_name='Historial', index=False)
 
+          # Guardar conteos Y la fecha en variables de entorno
           with open('conteos.txt', 'w') as f:
               f.write(f'Herramientas: {len(df_herramientas)}\n')
               f.write(f'Movimientos: {len(df_movimientos)}')
 
+          # Guardar fecha y hora para el correo
+          with open('fecha.txt', 'w') as f:
+              f.write(f'{fecha} {hora}')
+
+          with open('body.txt', 'w') as f:
+              f.write(f"""📊 Respaldo de Bitácora de Herramientas
+
+          Fecha: {fecha} {hora}
+
+          Herramientas: {len(df_herramientas)}
+          Movimientos: {len(df_movimientos)}
+
+          Se adjunta el archivo Excel con toda la información.""")
+
           print(f'✅ Backup creado: {filename}')
           "
+
+      - name: Leer cuerpo del correo
+        id: read_body
+        run: |
+          BODY=$(cat body.txt)
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Enviar correo con el respaldo
         uses: dawidd6/action-send-mail@v3
@@ -104,15 +128,8 @@ jobs:
           server_port: 465
           username: ${{ secrets.EMAIL_FROM }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "📊 Respaldo Bitácora"
+          subject: "📊 Respaldo Bitácora - $(date +'%Y-%m-%d')"
           to: ${{ secrets.EMAIL_TO }}
           from: ${{ secrets.EMAIL_FROM }}
-          body: |
-            📊 Respaldo de Bitácora de Herramientas
-
-            Fecha: $(date +'%Y-%m-%d %H:%M:%S')
-
-            $(cat conteos.txt)
-
-            Se adjunta el archivo Excel con toda la información.
+          body: ${{ steps.read_body.outputs.body }}
           attachments: backup_bitacora_*.xlsx
