@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clonar repositorio
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configurar Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -36,12 +36,9 @@ jobs:
           import os
           import socket
 
-          print('🔌 Conectando a Supabase (forzando IPv4)...')
+          print('🔌 Conectando a Supabase...')
 
-          # Forzar a usar IPv4 en la conexión
-          # Esta es la solución clave para el error "Network is unreachable"
           try:
-              # Intentar conectar usando hostaddr (IPv4)
               conn = psycopg2.connect(
                   host=os.environ['SUPABASE_HOST'],
                   port=os.environ['SUPABASE_PORT'],
@@ -53,27 +50,20 @@ jobs:
               )
               print('✅ Conexión exitosa')
           except Exception as e:
-              print(f'❌ Error de conexión: {e}')
-              # Si falla, intentar con hostaddr (IPv4 directo)
-              import socket
-              try:
-                  # Obtener la IP del host
-                  hostname = os.environ['SUPABASE_HOST']
-                  ipv4 = socket.gethostbyname(hostname)
-                  print(f'📍 Resolviendo {hostname} -> {ipv4}')
-                  conn = psycopg2.connect(
-                      host=ipv4,
-                      port=os.environ['SUPABASE_PORT'],
-                      database=os.environ['SUPABASE_DB'],
-                      user=os.environ['SUPABASE_USER'],
-                      password=os.environ['SUPABASE_PASSWORD'],
-                      sslmode='require',
-                      connect_timeout=30
-                  )
-                  print('✅ Conexión exitosa (usando IPv4 directo)')
-              except Exception as e2:
-                  print(f'❌ Error al conectar por IPv4: {e2}')
-                  raise e2
+              print(f'⚠️ Error de conexión: {e}')
+              hostname = os.environ['SUPABASE_HOST']
+              ipv4 = socket.gethostbyname(hostname)
+              print(f'📍 Resolviendo {hostname} -> {ipv4}')
+              conn = psycopg2.connect(
+                  host=ipv4,
+                  port=os.environ['SUPABASE_PORT'],
+                  database=os.environ['SUPABASE_DB'],
+                  user=os.environ['SUPABASE_USER'],
+                  password=os.environ['SUPABASE_PASSWORD'],
+                  sslmode='require',
+                  connect_timeout=30
+              )
+              print('✅ Conexión exitosa (IPv4 directo)')
 
           print('📊 Leyendo herramientas...')
           df_herramientas = pd.read_sql('SELECT * FROM herramientas ORDER BY nombre', conn)
@@ -93,7 +83,7 @@ jobs:
 
           conn.close()
 
-          fecha = datetime.now().strftime('%Y-%m-%d_%H-%M')
+          fecha = datetime.now().strftime('%Y-%m-%d')
           filename = f'backup_bitacora_{fecha}.xlsx'
 
           with pd.ExcelWriter(filename, engine='openpyxl') as writer:
@@ -102,7 +92,7 @@ jobs:
 
           with open('conteos.txt', 'w') as f:
               f.write(f'Herramientas: {len(df_herramientas)}\n')
-              f.write(f'Movimientos: {len(df_movimientos)}\n')
+              f.write(f'Movimientos: {len(df_movimientos)}')
 
           print(f'✅ Backup creado: {filename}')
           "
@@ -114,7 +104,7 @@ jobs:
           server_port: 465
           username: ${{ secrets.EMAIL_FROM }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "📊 Respaldo Bitácora - $(date +'%Y-%m-%d')"
+          subject: "📊 Respaldo Bitácora"
           to: ${{ secrets.EMAIL_TO }}
           from: ${{ secrets.EMAIL_FROM }}
           body: |
@@ -126,4 +116,3 @@ jobs:
 
             Se adjunta el archivo Excel con toda la información.
           attachments: backup_bitacora_*.xlsx
-          content_type: text/plain
