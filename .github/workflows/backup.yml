@@ -133,3 +133,6 @@ jobs:
           from: ${{ secrets.EMAIL_FROM }}
           body: ${{ steps.read_body.outputs.body }}
           attachments: backup_bitacora_*.xlsx
+      - name: Verificar archivo Excel
+        run: |
+          ls -la backup_bitacora_*.xlsx || echo "❌ Archivo no encontrado"
