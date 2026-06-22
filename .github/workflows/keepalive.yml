@@ -3,7 +3,7 @@ name: Keep Alive - Despertar Supabase
 on:
   schedule:
     # ⏰ Ejecutar cada 6 horas (edita si quieres)
-    - cron: '0 */6 * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
