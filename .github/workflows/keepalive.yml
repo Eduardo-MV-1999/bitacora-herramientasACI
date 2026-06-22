@@ -13,7 +13,8 @@ jobs:
       - name: Hacer ping a la app
         run: |
           # 🔧 CAMBIA ESTA URL POR LA DE TU APP EN STREAMLIT CLOUD
-          APP_URL="https://bitacora-herramientas-aci.streamlit.app"
+          APP_URL="https://bitacora-herramientas-aci-v1.streamlit.app/"
+          
           
           echo "🔄 Haciendo ping a $APP_URL..."
           
