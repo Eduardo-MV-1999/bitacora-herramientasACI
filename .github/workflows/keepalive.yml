@@ -2,7 +2,7 @@ name: Keep Alive - Despertar Supabase
 
 on:
   schedule:
-    # ⏰ Ejecutar cada 6 horas (edita si quieres)
+    # ⏰ Ejecutar cada 6 horas (ajusta si quieres)
     - cron: '0 */4 * * *'
   workflow_dispatch:
 
@@ -12,22 +12,35 @@ jobs:
     steps:
       - name: Hacer ping a la app
         run: |
-          # 🔧 CAMBIA ESTA URL POR LA DE TU APP EN STREAMLIT CLOUD
-          APP_URL="https://bitacora-herramientas-aci-v1.streamlit.app/"
+          # 🔧 URL DE TU APP (sin barra al final)
+          APP_URL="https://bitacora-herramientas-aci-v1.streamlit.app"
           
+          echo "🔄 Manteniendo activa la app en: $APP_URL"
           
-          echo "🔄 Haciendo ping a $APP_URL..."
+          # Usar el endpoint de salud interno de Streamlit
+          HEALTH_URL="${APP_URL}/_stcore/health"
           
-          # Intentar con curl con timeout y seguir redirecciones
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 -L $APP_URL)
+          echo "📡 Verificando salud en: $HEALTH_URL"
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL")
           
-          echo "✅ Respuesta: $RESPONSE"
+          echo "✅ Código de respuesta del health check: $RESPONSE"
           
-          if [ $RESPONSE -eq 200 ] || [ $RESPONSE -eq 302 ] || [ $RESPONSE -eq 301 ]; then
-            echo "✅ App activa y respondiendo"
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ App activa y saludable"
             exit 0
           else
-            echo "⚠️ La app respondió con código $RESPONSE"
-            # No fallamos el workflow, solo advertimos
-            exit 0
+            echo "⚠️ Health check respondió con $RESPONSE. Intentando con la URL principal..."
+            
+            # Fallback: intentar con la URL principal
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$APP_URL")
+            echo "✅ Código de respuesta de la app: $RESPONSE"
+            
+            # 200, 302, 301, 403 son códigos que indican que la app está viva
+            if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "302" ] || [ "$RESPONSE" = "301" ] || [ "$RESPONSE" = "403" ]; then
+              echo "✅ App está respondiendo (código $RESPONSE)"
+              exit 0
+            else
+              echo "⚠️ La app respondió con $RESPONSE, pero se considera un warning, no un error."
+              exit 0
+            fi
           fi
