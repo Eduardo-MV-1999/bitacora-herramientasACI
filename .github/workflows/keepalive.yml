@@ -2,7 +2,8 @@ name: Keep Alive - Despertar Supabase
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    # ⏰ Ejecutar cada 6 horas (edita si quieres)
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,8 +12,21 @@ jobs:
     steps:
       - name: Hacer ping a la app
         run: |
+          # 🔧 CAMBIA ESTA URL POR LA DE TU APP EN STREAMLIT CLOUD
           APP_URL="https://bitacora-herramientas-aci.streamlit.app"
+          
           echo "🔄 Haciendo ping a $APP_URL..."
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL)
+          
+          # Intentar con curl con timeout y seguir redirecciones
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 -L $APP_URL)
+          
           echo "✅ Respuesta: $RESPONSE"
-          Agregar workflow Keep Alive
+          
+          if [ $RESPONSE -eq 200 ] || [ $RESPONSE -eq 302 ] || [ $RESPONSE -eq 301 ]; then
+            echo "✅ App activa y respondiendo"
+            exit 0
+          else
+            echo "⚠️ La app respondió con código $RESPONSE"
+            # No fallamos el workflow, solo advertimos
+            exit 0
+          fi
