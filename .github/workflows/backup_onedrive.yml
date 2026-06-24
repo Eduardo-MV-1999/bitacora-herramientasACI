@@ -40,23 +40,37 @@ jobs:
           import socket
           import msal
           import requests
+          import re
 
           print('🔌 Conectando a Supabase...')
 
-          # Obtener y limpiar el hostname
-          hostname = os.environ.get('SUPABASE_HOST', '').strip()
-          print(f'📡 Hostname: [{hostname}]')
+          # Obtener hostname y limpiarlo de caracteres invisibles
+          hostname_raw = os.environ.get('SUPABASE_HOST', '')
+          print(f'📡 Hostname RAW (longitud: {len(hostname_raw)}): [{hostname_raw}]')
+          
+          # Limpiar: eliminar espacios, saltos de línea, comillas, etc.
+          hostname = re.sub(r'[\s"\']', '', hostname_raw)
+          print(f'📡 Hostname LIMPIO (longitud: {len(hostname)}): [{hostname}]')
 
           if not hostname:
-              raise ValueError('❌ SUPABASE_HOST no está definido')
+              raise ValueError('❌ SUPABASE_HOST está vacío después de limpiar')
+
+          # Verificar que el hostname tenga el formato correcto
+          if not hostname.endswith('supabase.co'):
+              print(f'⚠️ El hostname no termina en supabase.co: {hostname}')
+              print('   Verifica que el secreto sea correcto')
+              raise ValueError('Hostname inválido')
 
           # Resolver IPv4
           try:
               ipv4 = socket.gethostbyname(hostname)
               print(f'📍 Resuelto: {hostname} -> {ipv4}')
           except socket.gaierror as e:
-              print(f'❌ Error: {e}')
-              print('Verifica que SUPABASE_HOST sea correcto en GitHub Secrets')
+              print(f'❌ Error al resolver: {e}')
+              print('   Posibles causas:')
+              print('   1. El hostname tiene caracteres invisibles')
+              print('   2. El hostname es incorrecto')
+              print('   3. No hay conexión a Internet')
               raise
 
           # Conectar a Supabase
