@@ -3,7 +3,7 @@ name: Backup a OneDrive
 on:
   schedule:
     - cron: '0 8 * * *'  # Todos los días a las 8 AM
-  workflow_dispatch:      # Permite ejecución manual
+  workflow_dispatch:
 
 jobs:
   backup:
@@ -41,36 +41,36 @@ jobs:
           import msal
           import requests
 
-          # 1. CONEXIÓN A SUPABASE
-          print('🔌 Conectando a Supabase...')
+          print('🔌 Conectando a Supabase (forzando IPv4)...')
+
+          # ============================================================
+          # CONEXIÓN A SUPABASE - FORZANDO IPv4 DIRECTAMENTE
+          # ============================================================
+          hostname = os.environ['SUPABASE_HOST']
+          
+          # Obtener la dirección IPv4 del hostname
           try:
-              conn = psycopg2.connect(
-                  host=os.environ['SUPABASE_HOST'],
-                  port=os.environ['SUPABASE_PORT'],
-                  database=os.environ['SUPABASE_DB'],
-                  user=os.environ['SUPABASE_USER'],
-                  password=os.environ['SUPABASE_PASSWORD'],
-                  sslmode='require',
-                  connect_timeout=30
-              )
-              print('✅ Conexión exitosa')
-          except Exception as e:
-              print(f'⚠️ Error de conexión: {e}')
-              hostname = os.environ['SUPABASE_HOST']
               ipv4 = socket.gethostbyname(hostname)
               print(f'📍 Resolviendo {hostname} -> {ipv4}')
-              conn = psycopg2.connect(
-                  host=ipv4,
-                  port=os.environ['SUPABASE_PORT'],
-                  database=os.environ['SUPABASE_DB'],
-                  user=os.environ['SUPABASE_USER'],
-                  password=os.environ['SUPABASE_PASSWORD'],
-                  sslmode='require',
-                  connect_timeout=30
-              )
-              print('✅ Conexión exitosa (IPv4 directo)')
+          except socket.gaierror as e:
+              print(f'❌ Error al resolver hostname: {e}')
+              raise
 
-          # 2. LEER DATOS
+          # Conectar usando la IP directamente (IPv4)
+          conn = psycopg2.connect(
+              host=ipv4,  # Usamos la IP en lugar del hostname
+              port=os.environ['SUPABASE_PORT'],
+              database=os.environ['SUPABASE_DB'],
+              user=os.environ['SUPABASE_USER'],
+              password=os.environ['SUPABASE_PASSWORD'],
+              sslmode='require',
+              connect_timeout=30
+          )
+          print('✅ Conexión exitosa (IPv4 directo)')
+
+          # ============================================================
+          # LEER DATOS
+          # ============================================================
           print('📊 Leyendo herramientas...')
           df_herramientas = pd.read_sql('SELECT * FROM herramientas ORDER BY nombre', conn)
           print(f'✅ {len(df_herramientas)} herramientas')
@@ -93,7 +93,9 @@ jobs:
 
           conn.close()
 
-          # 3. CREAR EXCEL
+          # ============================================================
+          # CREAR EXCEL
+          # ============================================================
           fecha = datetime.now().strftime('%Y-%m-%d')
           filename = f'backup_bitacora_{fecha}.xlsx'
 
@@ -104,7 +106,9 @@ jobs:
 
           print(f'✅ Backup creado: {filename}')
 
-          # 4. AUTENTICACIÓN EN MICROSOFT GRAPH
+          # ============================================================
+          # AUTENTICACIÓN EN MICROSOFT GRAPH
+          # ============================================================
           print('🔑 Autenticando en Microsoft Graph...')
           
           app = msal.PublicClientApplication(
@@ -114,7 +118,7 @@ jobs:
           
           result = app.acquire_token_by_refresh_token(
               os.environ['ONEDRIVE_REFRESH_TOKEN'],
-              scopes=['Files.ReadWrite']
+              scopes=['Files.ReadWrite', 'User.Read']
           )
           
           if 'access_token' not in result:
@@ -123,7 +127,9 @@ jobs:
           access_token = result['access_token']
           print('✅ Autenticación exitosa')
 
-          # 5. SUBIR A ONEDRIVE
+          # ============================================================
+          # SUBIR A ONEDRIVE
+          # ============================================================
           print('📤 Subiendo archivo a OneDrive...')
           
           upload_url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Backup_Bitacora/:/createUploadSession'
@@ -136,6 +142,7 @@ jobs:
           
           if session_response.status_code != 200:
               # Si la carpeta no existe, crearla y reintentar
+              print('📁 Creando carpeta Backup_Bitacora...')
               folder_url = 'https://graph.microsoft.com/v1.0/me/drive/root/children'
               folder_data = {'name': 'Backup_Bitacora', 'folder': {}}
               requests.post(folder_url, headers=headers, json=folder_data)
@@ -158,6 +165,7 @@ jobs:
                   print(f'✅ Archivo subido exitosamente a OneDrive: {filename}')
               else:
                   print(f'⚠️ Error al subir: {upload_response.status_code}')
+                  print(upload_response.text)
           else:
               print(f'❌ No se pudo crear sesión de upload: {session_response.text}')
           "
